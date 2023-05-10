@@ -1,7 +1,6 @@
-from multiprocessing import connection
-from numpy import int0
+import numpy as np
 from z3 import *
-from math import floor
+from math import floor, sqrt
 
 N_REGION = 3
 P_REGION = 3
@@ -90,7 +89,12 @@ class Grid:
     def occupy_one_point(self, x, y, value=1):
         
         self.grid[x][y] = value
-        
+
+    def fill_grid(self, list_of_lists):
+        for x, ar in enumerate(list_of_lists):
+            for y, val in enumerate(ar):
+                self.occupy_one_point(y, x, int(val))
+  
         
     def print(self):
         print('Layer:', self.layer)
@@ -106,7 +110,7 @@ def estimateGrid(listPCirc, listNCirc):
 
     max_p_w = 3
     max_n_w = 3
-    mid_region = 10
+    mid_region = 12
     gnd_y, vdd_y = 2, 2
     
     min_bandwidth = N_REGION + P_REGION + MID_REGION + VDD_REGION + GND_REGION          #constante
@@ -150,8 +154,7 @@ def POLYfill(grPOLY, pcirc, ncirc, grCA):
         
                  
     grPOLY.print()
-    
-    
+  
 
 def RXfill(grRX, pcirc, ncirc):
     
@@ -279,7 +282,7 @@ def defineNets(grCA):
     con_count = 0
 
     for n in pinlist:
-        if len(pinlist[n])>1:    
+        if len(pinlist[n])==2:    
             for idx, ps in enumerate(pinlist[n]):
                 for i in range(idx+1, len(pinlist[n])):
                     aux_cons.append(Connection(con_count, Pin(ps[0], ps[1], con_count, n), Pin(pinlist[n][i][0], pinlist[n][i][1], con_count, n)))
@@ -290,34 +293,263 @@ def defineNets(grCA):
             netlist.append(Net(n, aux_cons, uniquepins))
             aux_cons = []
             uniquepins = []
-        
+            
+        if len(pinlist[n])>2: 
+            print(pinlist[n])
+
+            netlist.append(MST(pinlist[n], n))
+            
+            print("TOP")
+
     for n in netlist:
         print(n)
     
     print(pinlist)
     return netlist, pinlist
 
+def MST(pts, n):
+
+    # Create the graph
+    graph = {}
+    for i in range(len(pts)):
+        for j in range(i+1, len(pts)):
+            # Calculate the manhattan distance between the two pts
+            dist = abs(pts[j][0]-pts[i][0]) + abs(pts[j][1]-pts[i][1])
+            
+            # Add the edge to the graph
+            if i not in graph:
+                graph[i] = {}
+            if j not in graph:
+                graph[j] = {}
+            graph[i][j] = dist
+            graph[j][i] = dist
+
+
+    mst = kruskal(graph)
+    print(mst)
+    unique_connections = set()
+    list_of_connections = []
+    uniquepins = []
+
+    for node in mst:
+        for neighbor in mst[node]:
+            connection = tuple(sorted([node, neighbor]))
+            unique_connections.add(connection)
+
+    unique_connections = [list(connection) for connection in unique_connections]
+
+    for i, con in enumerate(unique_connections):
+        list_of_connections.append(Connection(i, Pin(pts[con[0]][0], pts[con[0]][1], i, n), Pin(pts[con[1]][0], pts[con[1]][1], i, n)))
+        pass
+    
+    for ps in pts:
+        uniquepins.append(Pin(ps[0], ps[1], len(unique_connections), n))
+
+    resulting_net = Net(n, list_of_connections, uniquepins)
+    
+    return resulting_net
+    
+def createRules(opt, matrix, list_of_pins, grid_x, grid_y):
+            opt.add(matrix[list_of_pins[0].y, list_of_pins[0].x] == True)
+            opt.add(matrix[list_of_pins[1].y, list_of_pins[1].x] == True)
+            pass
+
+            for idx in range(2):
+                north = And(matrix[list_of_pins[idx].y+1, list_of_pins[0].x])
+                south = And(matrix[list_of_pins[idx].y-1, list_of_pins[idx].x])
+                east = And(matrix[list_of_pins[idx].y, list_of_pins[idx].x+1])
+                weast = And(matrix[list_of_pins[idx].y, list_of_pins[idx].x-1])
+
+                not_north = Not(north)
+                not_south = Not(south)
+                not_east = Not(east)
+                not_weast = Not(weast)
+
+                opt.add(Implies(matrix[list_of_pins[1].y, list_of_pins[1].x] == True, 
+                                Or(And(not_north, not_south, east, not_weast),
+                                    And(not_north, not_south, not_east, weast),
+                                    And(north, not_south, not_east, not_weast),
+                                    And(not_north, south, not_east, not_weast)
+                    )))
+
+            for y in range(1, grid_y-1):    
+                for x in range(1, grid_x-1):
+                    if((x==list_of_pins[0].x and y==list_of_pins[0].y) or (x==list_of_pins[1].x and y==list_of_pins[1].y)):
+                        continue
+
+                    north = And(matrix[y+1, x])
+                    south = And(matrix[y-1, x])
+                    east = And(matrix[y, x+1])
+                    weast = And(matrix[y, x-1])
+
+                    not_north = Not(north)
+                    not_south = Not(south)
+                    not_east = Not(east)
+                    not_weast = Not(weast)
+
+                    opt.add(Implies(matrix[y, x]==True,
+                                    Or(And(north, south, not_east, not_weast),
+                                        And(north, not_south, east, not_weast),
+                                        And(north, not_south, not_east, weast),
+                                        And(not_north, south, east, not_weast),
+                                        And(not_north, south, not_east, weast),
+                                        And(not_north, not_south, east, weast))))
+
+
+def routeHoldingHandsMST(metalLayers, nets, pins, grid_x, grid_y):
+
+    opt = Optimize()
+    matrixDict = {}
+    multiPinDict = {}
+    f_test = 0
+
+    for n in nets:
+        matrixDict[n] = np.matrix([[Bool("net%i_%i_%i" % (n.net_number,j,i)) for j in range (grid_x)] for i in range(grid_y)])
+        for x in range(grid_x):
+            opt.add(matrixDict[n][0, x] == False)
+            opt.add(matrixDict[n][-1, x] == False)
+        for y in range(grid_y):
+            opt.add(matrixDict[n][y, 0] == False)
+            opt.add(matrixDict[n][y, -1] == False)
+        
+        print('NET NUMBER -> ', n.net_number)
+        t_nets = []
+
+
+        if(n.getNumOfConnections()==1):
+            
+            t_nets.append(n)
+            list_of_pins = n.getPins()
+            
+            createRules(opt, matrixDict[n], list_of_pins, grid_x, grid_y)
+
+
+        if(n.getNumOfConnections()>1):
+            matrixDict[n] = np.matrix([[Bool("net%i_%i_%i" % (n.net_number,j,i)) for j in range (grid_x)] for i in range(grid_y)])
+            multiPinDict[n] = {}
+            if f_test == 0:
+                nc = n
+                f_test = 1
+            for con in n.connections:
+                if f_test == 1:
+                    cc = con
+                    f_test = 2
+                print("entrou na CON ->", con.number)
+                listOfPins = [con.pin1, con.pin2]
+                auxMatrix = np.matrix([[Bool("net%i_con_%i_%i_%i" % (n.net_number, con.number,j,i)) for j in range (grid_x)] for i in range(grid_y)])
+                multiPinDict[n][con] = auxMatrix
+                for x in range(grid_x):
+                    opt.add(multiPinDict[n][con][0, x] == False)
+                    opt.add(multiPinDict[n][con][-1, x] == False)
+                for y in range(grid_y):
+                    opt.add(multiPinDict[n][con][y, 0] == False)
+                    opt.add(multiPinDict[n][con][y, -1] == False)
+                print(multiPinDict[n][con])
+                createRules(opt, multiPinDict[n][con], listOfPins, grid_x, grid_y)
+            
+            for y in range(1, grid_y-1):    
+                for x in range(1, grid_x-1):
+                    opt.add(matrixDict[n][y, x] == False)
+                
+            
+
+    final_mx = np.matrix([[Int('SM_%i_%i' % (j,i)) for j in range (grid_x)] for i in range(grid_y)])
+    for y in range(0, grid_y):    
+        for x in range(0, grid_x):
+            opt.add(And(Or(final_mx[y, x]==1, final_mx[y, x]== 0), final_mx[y, x] == Sum([matrixDict[n][y, x] for n in nets])))
+            pass
+
+    for n in nets:
+        if n.getNumOfConnections()==1:
+            cost = Sum([Sum([matrixDict[n][y, x] for x in range(1,grid_x-1)]) for y in range(1,grid_y-1)])
+            opt.minimize(cost)
+
+    opt.set('timeout', 60000)
+    if opt.check()==sat:
+        m = opt.model()
+        met1Grid = Grid('M1', grid_x, grid_y)
+        dict_nets_matrix = {}
+
+
+        for n in nets:
+            dict_nets_matrix[n.net_number] = matrix_conversion(matrixDict[n], grid_x, grid_y, m)
+            
+
+        rm = result_matrix(dict_nets_matrix, grid_x, grid_y)
+        print(rm.tolist())
+        met1Grid.fill_grid(rm)
+        return met1Grid
+
+       
+    else:
+        print("UNSAT")
+
+    return
+
+def matrix_conversion(matrix, grid_x, grid_y, model):
+    new_m = []
+    for j in range(grid_y):
+        new_array = []
+        for i in range(grid_x):
+            new_array.append(int(bool(BoolVal(model.eval(matrix[j, i]))))) if type(matrix[j, i]) is z3.z3.BoolRef else new_array.append(0)
+        new_m.append(new_array)
+
+    return new_m
+
+def result_matrix(dict_nets_matrix, grid_x, grid_y):
+    res_m = np.zeros((grid_y,grid_x))
+    
+    for label, matrix in dict_nets_matrix.items():
+        for y in range(1, grid_y-1):
+            for x in range(1, grid_x-1):
+                if matrix[y][x] == 1:
+                    res_m[y,x] = label
+
+    return res_m
+
+# Kruskal's algorithm
+def kruskal(graph):
+    # Create a set for each vertex
+    sets = [{i} for i in graph]
+    
+    # Sort the edges by weight
+    edges = []
+    for u in graph:
+        for v in graph[u]:
+            edges.append((u, v, graph[u][v]))
+    edges.sort(key=lambda e: e[2])
+    
+    # Iterate through the edges and add them to the tree if they connect different sets
+    tree = {}
+    for u, v, w in edges:
+        set_u = next((s for s in sets if u in s))
+        set_v = next((s for s in sets if v in s))
+        if set_u != set_v:
+            # Add the edge to the tree
+            if u not in tree:
+                tree[u] = {}
+            if v not in tree:
+                tree[v] = {}
+            tree[u][v] = w
+            tree[v][u] = w
+            
+            # Merge the sets
+            sets.remove(set_u)
+            sets.remove(set_v)
+            sets.append(set_u.union(set_v))
+            
+    return tree
 
 def route(metalLayers, nets, pins, grid_x, grid_y):
     
     first_route = True
-    alpha = 0
 
     s = Solver()
     
     num_metal = len(metalLayers)
     metal_grid_3d = [[[Int("s_%i_%i_%i" % (j,i,k)) for j in range (grid_x)] for i in range(grid_y)] for k in range(num_metal)]
-    #print(metal_grid_3d)
-    
-
-
-    # for net in nets:
-    #     print(net, nets[net])
-    #     for point in nets[net]:
-    #         print(point[0], point[1])
-    #         s.add(metal_grid_3d[0][point[1]][point[0]] == net)
         
-    
+
     nets_set = set([n.net_number for n in nets])
     net_number = []
     
@@ -419,73 +651,7 @@ def route(metalLayers, nets, pins, grid_x, grid_y):
                         And(Not(ap), Not(bp), cp, Not(dp)),
                         And(Not(ap), Not(bp), Not(cp), dp)
                         ))
-
-                #s.add(Implies(is_pin[ps.y][ps.x]==True, ))
-                #s.add(metal_grid_3d[0][ps[1]][ps[0]] == p) 
-                # s.add(And(Or(Not(metal_grid_3d[0][ps.y][ps.x] == metal_grid_3d[0][ps.y+1][ps.x]),
-                #              Not(metal_grid_3d[0][ps.y][ps.x] == metal_grid_3d[0][ps.y-1][ps.x])),
-                #         And(Or(Not(metal_grid_3d[0][ps.y][ps.x] == metal_grid_3d[0][ps.y+1][ps.x]),
-                #                Not(metal_grid_3d[0][ps.y][ps.x] == metal_grid_3d[0][ps.y][ps.x+1])),
-                #             And(Or(Not(metal_grid_3d[0][ps.y][ps.x] == metal_grid_3d[0][ps.y+1][ps.x]),
-                #                    Not(metal_grid_3d[0][ps.y][ps.x] == metal_grid_3d[0][ps.y][ps.x-1])),
-                #                 And(Or(Not(metal_grid_3d[0][ps.y][ps.x] == metal_grid_3d[0][ps.y-1][ps.x]),
-                #                        Not(metal_grid_3d[0][ps.y][ps.x] == metal_grid_3d[0][ps.y][ps.x+1])),
-                #                     And(Or(Not(metal_grid_3d[0][ps.y][ps.x] == metal_grid_3d[0][ps.y-1][ps.x]),
-                #                            Not(metal_grid_3d[0][ps.y][ps.x] == metal_grid_3d[0][ps.y][ps.x-1])),
-                #                         Or(Not(metal_grid_3d[0][ps.y][ps.x] == metal_grid_3d[0][ps.y][ps.x+1]),
-                #                            Not(metal_grid_3d[0][ps.y][ps.x] == metal_grid_3d[0][ps.y][ps.x-1]))))))  )
-                # )
-                                           
-                
-                # s.add(Or(
-                #     And(ap, Not(bp), Not(cp), Not(dp)),
-                #     And(Not(ap), bp, Not(cp), Not(dp)),
-                #     And(Not(ap), Not(bp), cp, Not(dp)),
-                #     And(Not(ap), Not(bp), Not(cp), dp)
-                #     )
-                # )
-
-
-
-                # s.add(
-                #     Or(
-                #         And(metal_grid_3d[0][ps.y+1][ps.x] == 0,
-                #             And(metal_grid_3d[0][ps.y-1][ps.x] == 0,
-                #                 And(metal_grid_3d[0][ps.y][ps.x+1] == 0,
-                #                     metal_grid_3d[0][ps.y][ps.x-1] == metal_grid_3d[0][ps.y][ps.x])
-                #             )
-                #         ),
-    
-                #     Or(
-                #         And(metal_grid_3d[0][ps.y+1][ps.x] == 0,
-                #             And(metal_grid_3d[0][ps.y-1][ps.x] == 0,
-                #                 And((metal_grid_3d[0][ps.y][ps.x+1] == metal_grid_3d[0][ps.y][ps.x]),
-                #                     metal_grid_3d[0][ps.y][ps.x-1] == 0)
-                #             )
-                #         ),
-                        
-                #     Or(
-                #         And(metal_grid_3d[0][ps.y+1][ps.x] == 0,
-                #             And((metal_grid_3d[0][ps.y-1][ps.x] == metal_grid_3d[0][ps.y][ps.x]),
-                #                 And(metal_grid_3d[0][ps.y][ps.x+1] == 0,
-                #                     metal_grid_3d[0][ps.y][ps.x-1] == 0)
-                #             )
-                #         ),
-                #         And((metal_grid_3d[0][ps.y+1][ps.x] == metal_grid_3d[0][ps.y][ps.x]),
-                #             And(metal_grid_3d[0][ps.y-1][ps.x] == 0,
-                #                 And(metal_grid_3d[0][ps.y][ps.x+1] == 0,
-                #                    metal_grid_3d[0][ps.y][ps.x-1] == 0)
-                #             )
-                #         )
-                                        
-                #     )
-                    
-                #     )
-                # )
-                
-                # )
-               
-            
+          
     
     for y in range(1, grid_y-1):    
         for x in range(1, grid_x-1):
@@ -591,61 +757,16 @@ def route(metalLayers, nets, pins, grid_x, grid_y):
                     )
                 )
                 
-
-                # s.add(If(metal_grid_3d[0][y][x] == 0, True,
-                #     Or(And(Not(a),
-                #         And(Not(b),
-                #             And(Not(c),
-                #                 And(Not(d),
-                #                     And(Not(e),
-                #                         (f))))))
-                #     ,Or(And(Not(a),
-                #         And(Not(b),
-                #             And(Not(c),
-                #                 And(Not(d),
-                #                     And((e),
-                #                         Not(f))))))
-                        
-                #     ,Or(And(Not(a),
-                #         And(Not(b),
-                #             And(Not(c),
-                #                 And((d),
-                #                     And(Not(e),
-                #                         Not(f))))))
-                        
-                #     ,Or(And(Not(a),
-                #         And(Not(b),
-                #             And((c),
-                #                 And(Not(d),
-                #                     And(Not(e),
-                #                         Not(f))))))
-                        
-                #     ,Or(And(Not(a),
-                #         And((b),
-                #             And(Not(c),
-                #                 And(Not(d),
-                #                     And(Not(e),
-                #                         Not(f)))))),
-                #         And((a),
-                #         And(Not(b),
-                #             And(Not(c),
-                #                 And(Not(d),
-                #                     And(Not(e),
-                #                         Not(f))))))
-                        
-                #     )
-                #     )
-                #     )
-                #     )
-                #     )
-                # )
-                # )
-
-    sum_of_zeros = (Sum([Sum([If(metal_grid_3d[0][y][x] == 0, 1, 0) for x in range(1,grid_x-1)]) for y in range(1,grid_y-1)]))
     
-    zeros_optimization =  (grid_x*grid_y*alpha) - 2*(grid_x+grid_y)
+############################################################################################################################################
+    #alpha = 0
+    #sum_of_zeros = (Sum([Sum([If(metal_grid_3d[0][y][x] == 0, 1, 0) for x in range(1,grid_x-1)]) for y in range(1,grid_y-1)]))   
+    #zeros_optimization =  (grid_x*grid_y*alpha) - 2*(grid_x+grid_y)
+    #s.add(sum_of_zeros > zeros_optimization)
+############################################################################################################################################   
 
-    s.add(sum_of_zeros > zeros_optimization)
+
+
 
 
 
@@ -712,6 +833,8 @@ def route(metalLayers, nets, pins, grid_x, grid_y):
         
         print(type(m.eval(metal_grid_3d[0][1][1])))
         
+        print(s.statistics())
+
         first_route = False
         return met1Grid
 
