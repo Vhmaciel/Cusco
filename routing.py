@@ -128,9 +128,7 @@ def estimateGrid(listPCirc, listNCirc):
     return count_col, count_row
 
 def POLYfill(grPOLY, pcirc, ncirc, grCA):
-    #if len(pcirc)!=len(ncirc):
-    #    print('Erro estranho kkk')
-    #    return
+    #TODO: substituir essa função para possibilitar roteamento com poly
     
     for idx in range(len(ncirc)):
         points = []
@@ -157,11 +155,7 @@ def POLYfill(grPOLY, pcirc, ncirc, grCA):
   
 
 def RXfill(grRX, pcirc, ncirc):
-    
-    #if len(pcirc)!=len(ncirc):
-    #    print('Erro estranho kkk')
-    #    return
-
+ 
     idx_p_max = 0
     idx_n_max = 0
     
@@ -229,9 +223,6 @@ def CAfill(grCA, ppos, npos):
         if nmos != 0:
             grCA.occupy_one_point((idn*4)+2, yn+MID_REGION+P_REGION+VDD_REGION, nmos)
             
-    # for idx in range(math.ceil(grCA.x_size/2)-1):
-    #     grCA.occupy_one_point((idx*2)+1, 0, 2)
-    #     grCA.occupy_one_point((idx*2)+1, N_REGION + P_REGION + MID_REGION + VDD_REGION + GND_REGION-1, 1)
         
     grCA.occupy_one_point(floor(grCA.x_size/2), 1, 2)
     grCA.occupy_one_point(floor(grCA.x_size/2), N_REGION + P_REGION + MID_REGION + VDD_REGION + GND_REGION-2, 1)

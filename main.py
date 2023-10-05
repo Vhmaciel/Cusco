@@ -1,5 +1,6 @@
 from z3 import *
 import placement as pl
+import placeAndRoute as PAR
 import toolutils as ut
 import routing as rt
 import drawing as dr
@@ -14,6 +15,10 @@ for item in nets:
     circuit, circDict, pc, nc, ppos, npos = [], [], [], [], [], []
     circuit, circDict = ut.read_netlist(item)
     netlist = []
+    PAR.placement_SPandR(circuit)
+    continue
+
+
     pc, nc, ppos, npos = pl.placement(circuit)
     
     
