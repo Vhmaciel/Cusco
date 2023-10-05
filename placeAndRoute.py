@@ -55,12 +55,15 @@ def placement_SPandR(circuit):         # Função que faz o posicionamento de tr
     for t in range(1):
         s = Optimize()
 
-        Xt = [ Int('xt%s' % i) for i in range(spaces_counter) ]
-        Xs = [ Int('xs%s' % i) for i in range(spaces_counter) ]
-        Rt = [ Int('rt%s' % i) for i in range(spaces_counter) ]
-        Lt = [ Int('lt%s' % i) for i in range(spaces_counter) ]
-        Rs = [ Int('rs%s' % i) for i in range(spaces_counter) ]
-        Ls = [ Int('ls%s' % i) for i in range(spaces_counter) ]
+        Xt = [ Int('xt_%s' % i) for i in range(spaces_counter) ]
+        Xs = [ Int('xs_%s' % i) for i in range(spaces_counter) ]
+        Rt = [ Int('rt_%s' % i) for i in range(spaces_counter) ]
+        Lt = [ Int('lt_%s' % i) for i in range(spaces_counter) ]
+        Rs = [ Int('rs_%s' % i) for i in range(spaces_counter) ]
+        Ls = [ Int('ls_%s' % i) for i in range(spaces_counter) ]
+        trans = [ Int('trans_%s' % i) for i in range(spaces_counter) ]
+        pFlipped = [ Int('pFlipped_%s' % i) for i in range(spaces_counter) ]
+
 
         for i in range(spaces_counter):
             s.add(Xt[i] >= 0)
@@ -81,6 +84,11 @@ def placement_SPandR(circuit):         # Função que faz o posicionamento de tr
                 else:
                     s.add(Xt[i] == Xs[j])
 
+        for i in range(spaces_counter):
+            for j in range(spaces_counter): # Atribui os valores da netlist para as variáves do resolvedor. Inverte a atribuição caso o transistor esteja invertido. Regra de implicação de valores
+                s.add(If(pFlipped[i], Implies(trans[i]==i, pSource[i]==pcirc[j].drain), Implies(pPiecePlacement[i]==j, pSource[i]==pcirc[j].source)))
+                s.add(If(pFlipped[i], Implies(pPiecePlacement[i]==j, pDrain[i]==pcirc[j].source), Implies(pPiecePlacement[i]==j, pDrain[i]==pcirc[j].drain)))             
+                
 
         h = s.minimize(max(Xt))     
 
