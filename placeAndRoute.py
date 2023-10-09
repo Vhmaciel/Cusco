@@ -22,8 +22,6 @@ def placement_SPandR(circuit):         # Função que faz o posicionamento de tr
     pcirc = []
     ncirc = []
 
-    w = 2
-    d = 2 
 
 
     for inst in circuit:        # Faz a contagem e separação de transistores 
@@ -56,45 +54,55 @@ def placement_SPandR(circuit):         # Função que faz o posicionamento de tr
         s = Optimize()
 
         Xt = [ Int('xt_%s' % i) for i in range(spaces_counter) ]
-        Xs = [ Int('xs_%s' % i) for i in range(spaces_counter) ]
         Rt = [ Int('rt_%s' % i) for i in range(spaces_counter) ]
         Lt = [ Int('lt_%s' % i) for i in range(spaces_counter) ]
-        Rs = [ Int('rs_%s' % i) for i in range(spaces_counter) ]
-        Ls = [ Int('ls_%s' % i) for i in range(spaces_counter) ]
-        trans = [ Int('trans_%s' % i) for i in range(spaces_counter) ]
-        pFlipped = [ Int('pFlipped_%s' % i) for i in range(spaces_counter) ]
+        tns = [ Int('tns_%s' % i) for i in range(spaces_counter) ]
+        pFlipped = [ Bool('pFlipped_%s' % i) for i in range(spaces_counter) ]
+        cost = Int('cost')
 
+        s.add(cost >= 0)
 
         for i in range(spaces_counter):
             s.add(Xt[i] >= 0)
-            s.add(Xs[i] >= 0)
+            s.add(And(tns[i] >= 0, tns[i] < spaces_counter))
+            
+
+        for i in range(spaces_counter):
+            for j in range(spaces_counter): # Atribui os valores da netlist para as variáves do resolvedor. Inverte a atribuição caso o transistor esteja invertido. Regra de implicação de valores
+                s.add(If(pFlipped[i], Implies(tns[i]==j, Lt[i]==pcirc[j].drain), Implies(tns[i]==j, Rt[i]==pcirc[j].source)))
+                s.add(If(pFlipped[i], Implies(tns[i]==j, Rt[i]==pcirc[j].source), Implies(tns[i]==j, Lt[i]==pcirc[j].drain)))  
+            # if i < spaces_counter-1:    
+            #     s.add(Or(Or(Rt[i]==Lt[i+1], Rt[i]==0), Lt[i+1]==0))   # O lado direito de um dispositivo deve ser igual ao lado esquerdo do seu vizinho ou igual a 0
 
         for i in range(spaces_counter):
             for j in range(spaces_counter):
                 if i != j: 
                     s.add(
-                        If(And((Xt[i] >= Xs[j] + w), Lt[i] != Rs[j]), (Xt[i] >= Xs[j] + d + w),
-                            If(And((Xt[i] >= Xs[j] + w), Lt[i] == Rs[j]), (Xt[i] == Xs[j] + w),
-                                If(And((Xt[i] + w <= Xs[j]), Rt[i] != Ls[j]), (Xt[i] + w + d <= Xs[j]),
-                                    If(And((Xt[i] + w <= Xs[j]), Rt[i] != Ls[j]), (Xt[i] + w == Xs[j]), unsat)
+                        If(And((Xt[i] >= Xt[j] + 2), Lt[i] != Rt[j]), And(Xt[i] >= Xt[j] + 2 + 2, cost == 2),
+                            If(And((Xt[i] >= Xt[j] + 2), Lt[i] == Rt[j]), (Xt[i] == Xt[j] + 2),
+                                If(And((Xt[i] + 2 <= Xt[j]), Rt[i] != Lt[j]), And(Xt[i] + 2 + 2 <= Xt[j], cost == 2),
+                                    If(And((Xt[i] + 2 <= Xt[j]), Rt[i] != Lt[j]), (Xt[i] + 2 == Xt[j]), False)
                                 )
                             )
                         )
                     )
-                else:
-                    s.add(Xt[i] == Xs[j])
+                    s.add(Xt[i] != Xt[j])
+                    s.add(tns[i] != tns[j])
+                           
 
-        for i in range(spaces_counter):
-            for j in range(spaces_counter): # Atribui os valores da netlist para as variáves do resolvedor. Inverte a atribuição caso o transistor esteja invertido. Regra de implicação de valores
-                s.add(If(pFlipped[i], Implies(trans[i]==i, pSource[i]==pcirc[j].drain), Implies(pPiecePlacement[i]==j, pSource[i]==pcirc[j].source)))
-                s.add(If(pFlipped[i], Implies(pPiecePlacement[i]==j, pDrain[i]==pcirc[j].source), Implies(pPiecePlacement[i]==j, pDrain[i]==pcirc[j].drain)))             
-                
+        h = s.minimize(cost)     
 
-        h = s.minimize(max(Xt))     
 
-        print(s.check())
-        print(s.model())
-        print(h.value())
+        if(s.check()==sat):
+            m = s.model()
+            for i in range(spaces_counter):
+                print('pos:' + str(m.eval(Xt[i])) + '| piece: ' + str(m.eval(tns[i])) + ' | f: ' + str(m.eval(pFlipped[i])) + ' - |' + str(m.eval(Lt[i]))+ ' ' + 'GATE INFO' + ' ' + str(m.eval(Rt[i]))+'|')
+
+            print(m.eval(cost))
+            print(s.model())
+            #print(h.value())
+        else:
+            print("UNSAT")
 
 
         
