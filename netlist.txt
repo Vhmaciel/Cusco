@@ -1,6 +1,0 @@
-mp3 vdd B out pmos
-mp4 vdd B out pmos
-mp1 vdd A out pmos
-mp2 vdd A out pmos
-mn2 n3 B gnd nmos
-mn1 out A n3 nmos

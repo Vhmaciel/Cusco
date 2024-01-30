@@ -143,6 +143,8 @@ def placement(circuit):         # Função que faz o posicionamento de transisto
             pcirc.sort(key=lambda x: x.position, reverse=False)
             ncirc.sort(key=lambda x: x.position, reverse=False)
 
+            print(s.statistics())
+
             return pcirc, ncirc, ppos, npos
 
         else:   # Caso não exista solução, adiciona 1 dispositivo dummy nas redes pmos e nmos, inserindo artificialmente uma quebra de difusão. As quebras são inseridas até que exista uma solução

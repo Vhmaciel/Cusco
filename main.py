@@ -1,20 +1,22 @@
 from z3 import *
-import placement as pl
-import placeAndRoute as PAR
+import solvers.python.placement as pl
+import solvers.python.placeSPandR as PAR
 import toolutils as ut
-import routing as rt
-import drawing as dr
+import solvers.python.routing as rt
+import ui.drawing as dr
 import numpy as np
 
 #nets = ["netlist.txt", "sccg.txt", "nor.txt", 'a.txt']
 #nets = ['somador.txt']
-nets = ['netlist.txt']
+nets = ['inputs/o211a.txt']
 layers = ['M1', 'CA', 'RX', 'POLY']
 
 for item in nets:
     circuit, circDict, pc, nc, ppos, npos = [], [], [], [], [], []
     circuit, circDict = ut.read_netlist(item)
     netlist = []
+    
+    pl.placement(circuit)
     PAR.placement_SPandR(circuit)
     continue
 

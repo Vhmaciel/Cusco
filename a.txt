@@ -1,8 +1,0 @@
-mp1 vdd g8 n2 pmos
-mp2 vdd g9 n3 pmos
-mp3 n2 g11 n6 pmos
-mp4 n3 g10 n6 pmos
-mn1 n6 g9 n4 nmos
-mn2 n6 g8 n5 nmos
-mn3 n4 g11 gnd nmos
-mn4 n5 g10 gnd nmos
