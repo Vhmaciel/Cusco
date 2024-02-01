@@ -13,11 +13,39 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 # build the path to dir_assets
 dir_assets = os.path.join(current_dir, '..', 'assets')
 
-wildcard = "Python source (*.py)|*.py|" \
-            "All files (*.*)|*.*"
+wildcard =  "Circuit Description Language (*.cdl)|*.cdl|" 
 
 def path_to_assets(file):
     return os.path.join(dir_assets, file)
+
+class LibraryDialog(wx.Dialog):
+    def __init__(self, *args, **kw):
+        super(LibraryDialog, self).__init__(*args, **kw)
+        self.InitUI()
+
+    def InitUI(self):
+        panel = wx.Panel(self)
+        vbox = wx.BoxSizer(wx.VERTICAL)
+
+        label = wx.StaticText(panel, label="Library Name:")
+        vbox.Add(label, flag=wx.ALL, border=10)
+
+        self.text_ctrl = wx.TextCtrl(panel)
+        vbox.Add(self.text_ctrl, flag=wx.EXPAND | wx.ALL, border=10)
+
+        btn_ok = wx.Button(panel, label='OK', size=(70, 30))
+        btn_ok.Bind(wx.EVT_BUTTON, self.OnOK)
+        vbox.Add(btn_ok, flag=wx.ALIGN_CENTER_HORIZONTAL | wx.ALL, border=10)
+
+        panel.SetSizer(vbox)
+        self.SetSize((250, 180))
+        self.SetTitle('Create New Library')
+
+    def OnOK(self, event):
+        library_name = self.text_ctrl.GetValue()
+        # Adicione a lógica aqui para lidar com o nome da biblioteca
+        print(f"Library Name: {library_name}")
+        self.EndModal(wx.ID_OK)
 
 class Interface(wx.Frame):
 
@@ -46,6 +74,7 @@ class Interface(wx.Frame):
 
         new_netlist_item = wx.MenuItem(fileMenu, NEW_NETLIST, '&Create New Netlist\tCtrl+N')
         new_netlist_item.SetBitmap(self.PNGtoBMPresizer(path_to_assets('new_netlist_icon.png'), 20, 20)) 
+        new_netlist_item.Enable(False)
         fileMenu.Append(new_netlist_item)
 
         new_lib_item = wx.MenuItem(fileMenu, NEW_LIB, '&Create New Library\tCtrl+L')
@@ -55,13 +84,14 @@ class Interface(wx.Frame):
         imp = wx.Menu()
         imp.Append(IMPORT_LIB, 'Import Library')
         imp.Append(IMPORT_NETLIST, 'Import Netlist')
-
+        imp.Enable(IMPORT_NETLIST, False)
         fileMenu.AppendSubMenu(imp, 'I&mport' )
 
         quit_item = wx.MenuItem(fileMenu, APP_EXIT, '&Quit\tCtrl+Q')
         quit_item.SetBitmap(self.PNGtoBMPresizer(path_to_assets('quit_icon.png'), 20, 20)) 
         fileMenu.Append(quit_item)
 
+        self.Bind(wx.EVT_MENU, self.OnCreateLibrary, id=NEW_LIB)
         self.Bind(wx.EVT_MENU, self.OnQuit, quit_item)
         self.Bind(wx.EVT_MENU, lambda event, file_type='LIB': self.onOpenFile(event, file_type), id=IMPORT_LIB)
         self.Bind(wx.EVT_MENU, lambda event, file_type='NETLIST': self.onOpenFile(event, file_type), id=IMPORT_NETLIST)
@@ -99,6 +129,12 @@ class Interface(wx.Frame):
                 print('UEEEEPAAA')
 
         dlg.Destroy()
+
+    def OnCreateLibrary(self, event):
+        dlg = LibraryDialog(self)
+        result = dlg.ShowModal()
+        dlg.Destroy()
+
 
 def main():
 
